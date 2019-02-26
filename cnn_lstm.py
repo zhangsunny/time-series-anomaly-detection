@@ -6,7 +6,7 @@ from torch import nn
 
 
 class CNN_LSTM(nn.Module):
-    def __init__(self, input_size, n_filters, batch_size, hidden_size):
+    def __init__(self, input_size, n_filters, hidden_size, time_step):
         super(CNN_LSTM, self).__init__()
         self.input_size = input_size
         self.n_filters = n_filters
@@ -36,10 +36,11 @@ class CNN_LSTM(nn.Module):
             nn.MaxPool1d(kernel_size=2, stride=2, padding=0),
         )
 
-        self.batch_size = batch_size
+        # self.batch_size = batch_size
         self.hidden_size = hidden_size
+        self.time_step = time_step
         self.lstm = nn.LSTM(
-            input_size=1,
+            input_size=int(np.floor(hidden_size/2)*np.floor(input_size/4)),
             hidden_size=hidden_size,
             batch_first=True,
             num_layers=1,
@@ -51,34 +52,63 @@ class CNN_LSTM(nn.Module):
         )
 
     def forward(self, x):
-        x = self.conv1(x)
+        batch_size = x.shape[0]
+        x = x.view(-1, self.input_size)
+        # print(x.shape)
+        x = self.conv1(x.unsqueeze(1))
+        # print(x.shape)
         x = self.conv2(x)
-        x = x.view(x.size(0), -1)
-        out, (h, c) = self.lstm(x.unsqueeze(2))
+        # print(x.shape)
+        x = x.view(batch_size, self.time_step, -1)
+        # print(x.shape)
+        out, (h, c) = self.lstm(x)
         pred = self.fc(out[:, -1, :])
         return pred
+
+
+# 用滑动窗口处理获得多维特征
+def slide_window(x, T):
+    ts = []
+    for i in range(x.shape[0] - T + 1):
+        last = i + T
+        ts.append(x[i:last])
+    return np.array(ts)
+
+
+def gen_multi_feature(x, T):
+    ret = []
+    for i in range(x.shape[0]):
+        ts = slide_window(x[i], T)
+        ret.append(ts)
+    return np.array(ret)
 
 
 if __name__ == '__main__':
     path = './data/train-test-0.4.npz'
     train_data, test_data, train_label, test_label = load_train_test(path)
 
+    T = 10
+    train_data = gen_multi_feature(train_data, T)
+    test_data = gen_multi_feature(test_data, T)
+
     TEST = False
     model_save_path = './models/cnn_lstm.model'
     tmp_save_path = './models/cnn_lstm_%s.model'
     batch_size = 512
-    input_size = train_data.shape[1]
+    time_step = train_data.shape[1]
+    input_size = train_data.shape[2]
     n_filters = 64
     hidden_size = 64
-    EPOCH = 1000
-    lr = 1e-3
-    model = CNN_LSTM(input_size, n_filters, batch_size, hidden_size).to(DEVICE)
+    EPOCH = 100
+    lr = 1e-2
+
+    model = CNN_LSTM(input_size, n_filters, hidden_size, time_step).to(DEVICE)
 
     if not TEST:
         print('training model...')
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         loss_func = nn.CrossEntropyLoss()
-        x = torch.from_numpy(train_data).float().unsqueeze(1)
+        x = torch.from_numpy(train_data).float()
         y = torch.from_numpy(train_label).long()
         for epoch in range(EPOCH):
             batches = gen_batch(x, y, batch_size)
@@ -98,7 +128,7 @@ if __name__ == '__main__':
         print('loading model...')
         model.load_state_dict(torch.load(model_save_path))
 
-    var_test_x = torch.from_numpy(test_data).float().unsqueeze(1).to(DEVICE)
+    var_test_x = torch.from_numpy(test_data).float().to(DEVICE)
     var_test_y = torch.from_numpy(test_label).long().to(DEVICE)
     # 测试序列似乎还是太大，只能分批测试
     test_pred = []
