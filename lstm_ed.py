@@ -27,7 +27,7 @@ class LSTM_ED(nn.Module):
             num_layers=1,
         )
         self.fc = nn.Linear(self.hidden_size, self.input_size)
-        self.tanh = nn.Tanh()
+        self.tanh = nn.ReLU()
         self.decoder = nn.LSTMCell(
             input_size=self.input_size + self.hidden_size,
             hidden_size=self.hidden_size,
@@ -45,8 +45,8 @@ class LSTM_ED(nn.Module):
             x_t = self.tanh(self.fc(hd_t))
             h_d = torch.cat((hd_t, x_t), dim=1)
             pred[:, t, :] = x_t.view(-1, self.input_size)
-        return pred[:, range(pred.shape[1]-1, -1, -1)]
-        # return pred
+        # return pred[:, range(pred.shape[1]-1, -1, -1)]
+        return pred
 
     @staticmethod
     def init_variable(*args):

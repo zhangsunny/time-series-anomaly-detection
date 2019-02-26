@@ -73,3 +73,20 @@ def split_train_test(x, y, ratio=0.2):
     x_test, y_test = shuffle(x_test, y_test)
     return x_train, x_test, y_train, y_test
 
+
+# 用滑动窗口处理获得多维特征
+def slide_window(x, T):
+    ts = []
+    for i in range(x.shape[0] - T + 1):
+        last = i + T
+        ts.append(x[i:last])
+    return np.array(ts)
+
+
+# 调用滑动窗口将二维数据集转化为三维数据集
+def gen_multi_feature(x, T):
+    ret = []
+    for i in range(x.shape[0]):
+        ts = slide_window(x[i], T)
+        ret.append(ts)
+    return np.array(ret)
